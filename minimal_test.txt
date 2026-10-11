@@ -1,0 +1,3 @@
+name=Bulbasaur,id=1,types=grass
+name=Charmander,id=2,types=fire
+name=Squirtle,id=3,types=water
