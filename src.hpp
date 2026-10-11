@@ -40,7 +40,7 @@ struct Pokemon {
         name[0] = '\0';
     }
     
-    Pokemon(const char *pname, int pid, const char *ptypes) : id(pid) {
+    Pokemon(const char *pname, int pid, const char *ptypes, bool validate = true) : id(pid) {
         strncpy(name, pname, 11);
         name[11] = '\0';
         
@@ -51,6 +51,10 @@ struct Pokemon {
         while (std::getline(ss, type, '#')) {
             types.push_back(type);
         }
+        
+        if (validate) {
+            // This will be called from user operations, not file loading
+        }
     }
 };
 
@@ -58,6 +62,49 @@ class Pokedex {
 private:
     std::map<int, Pokemon> pokemons;
     std::string filename;
+    
+    // Type effectiveness map: attacker -> defender -> multiplier
+    std::map<std::string, std::map<std::string, float>> typeChart;
+    
+    void initTypeChart() {
+        // Fire
+        typeChart["fire"]["grass"] = 2.0f;
+        typeChart["fire"]["ice"] = 2.0f;
+        typeChart["fire"]["water"] = 0.5f;
+        
+        // Water
+        typeChart["water"]["fire"] = 2.0f;
+        typeChart["water"]["ground"] = 2.0f;
+        typeChart["water"]["grass"] = 0.5f;
+        
+        // Grass
+        typeChart["grass"]["water"] = 2.0f;
+        typeChart["grass"]["electric"] = 2.0f;
+        typeChart["grass"]["fire"] = 0.5f;
+        typeChart["grass"]["ice"] = 0.5f;
+        
+        // Electric
+        typeChart["electric"]["water"] = 2.0f;
+        typeChart["electric"]["flying"] = 2.0f;
+        typeChart["electric"]["ground"] = 0.0f;
+        typeChart["electric"]["grass"] = 0.5f;
+        
+        // Ice
+        typeChart["ice"]["grass"] = 2.0f;
+        typeChart["ice"]["ground"] = 2.0f;
+        typeChart["ice"]["flying"] = 2.0f;
+        typeChart["ice"]["fire"] = 0.5f;
+        
+        // Ground
+        typeChart["ground"]["fire"] = 2.0f;
+        typeChart["ground"]["electric"] = 2.0f;
+        typeChart["ground"]["flying"] = 0.0f;
+        
+        // Flying
+        typeChart["flying"]["grass"] = 2.0f;
+        typeChart["flying"]["electric"] = 2.0f;
+        typeChart["flying"]["ground"] = 2.0f;
+    }
     
     bool isValidName(const char *name) const {
         if (!name || strlen(name) == 0 || strlen(name) > 10) {
@@ -133,7 +180,7 @@ private:
                 
                 try {
                     int id = std::stoi(id_str);
-                    Pokemon pm(name_str.c_str(), id, types_str.c_str());
+                    Pokemon pm(name_str.c_str(), id, types_str.c_str(), false);
                     pokemons[id] = pm;
                 } catch (...) {
                     // Skip invalid entries during file loading
@@ -167,6 +214,7 @@ private:
 
 public:
     explicit Pokedex(const char *_fileName) : filename(_fileName) {
+        initTypeChart();
         loadFromFile();
     }
 
@@ -288,8 +336,20 @@ public:
             return -1.0f;
         }
         
-        // Simplified type chart - just return 1.0 for now
-        return 1.0f;
+        const Pokemon &defender = it->second;
+        float totalDamage = 1.0f;
+        
+        for (const std::string &defType : defender.types) {
+            auto attackerIt = typeChart.find(type);
+            if (attackerIt != typeChart.end()) {
+                auto defenderIt = attackerIt->second.find(defType);
+                if (defenderIt != attackerIt->second.end()) {
+                    totalDamage *= defenderIt->second;
+                }
+            }
+        }
+        
+        return totalDamage;
     }
 
     int catchTry() const {
@@ -297,8 +357,50 @@ public:
             return 0;
         }
         
-        // Simplified catch try - just return 1 for now
-        return 1;
+        // Start with the pokemon with smallest id
+        auto it = pokemons.begin();
+        Pokemon starter = it->second;
+        
+        std::set<int> owned;
+        owned.insert(starter.id);
+        
+        bool changed = true;
+        while (changed) {
+            changed = false;
+            
+            for (const auto &pair : pokemons) {
+                int targetId = pair.first;
+                const Pokemon &target = pair.second;
+                
+                if (owned.find(targetId) != owned.end()) {
+                    continue; // Already owned
+                }
+                
+                // Check if any owned pokemon can catch this target
+                bool canCatch = false;
+                for (int ownedId : owned) {
+                    const Pokemon &owner = pokemons.at(ownedId);
+                    
+                    // Try each type of the owned pokemon
+                    for (const std::string &attackType : owner.types) {
+                        float damage = attack(attackType.c_str(), targetId);
+                        if (damage >= 2.0f) {
+                            canCatch = true;
+                            break;
+                        }
+                    }
+                    
+                    if (canCatch) break;
+                }
+                
+                if (canCatch) {
+                    owned.insert(targetId);
+                    changed = true;
+                }
+            }
+        }
+        
+        return owned.size();
     }
 
     struct iterator {
