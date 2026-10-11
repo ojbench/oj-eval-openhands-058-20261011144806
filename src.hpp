@@ -40,7 +40,7 @@ struct Pokemon {
         name[0] = '\0';
     }
     
-    Pokemon(const char *pname, int pid, const char *ptypes) : id(pid) {
+    Pokemon(const char *pname, int pid, const char *ptypes, bool validate = true) : id(pid) {
         strncpy(name, pname, 11);
         name[11] = '\0';
         
@@ -50,6 +50,10 @@ struct Pokemon {
         
         while (std::getline(ss, type, '#')) {
             types.push_back(type);
+        }
+        
+        if (validate) {
+            // This will be called from user operations, not file loading
         }
     }
 };
@@ -174,9 +178,14 @@ private:
                     types_str = types_str.substr(6);
                 }
                 
-                int id = std::stoi(id_str);
-                Pokemon pm(name_str.c_str(), id, types_str.c_str());
-                pokemons[id] = pm;
+                try {
+                    int id = std::stoi(id_str);
+                    Pokemon pm(name_str.c_str(), id, types_str.c_str(), false);
+                    pokemons[id] = pm;
+                } catch (...) {
+                    // Skip invalid entries during file loading
+                    continue;
+                }
             }
         }
         
